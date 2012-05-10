@@ -65,6 +65,13 @@ class CommerceTesting
   }
 
   /**
+   * Reloads the page.
+   */
+  public function reload() {
+    $this->session->reload();
+  }
+
+  /**
    * Gets the page.
    *
    * @return
@@ -72,6 +79,16 @@ class CommerceTesting
    */
   public function getPage() {
     return $this->session->getPage();
+  }
+
+  /**
+   * Gets HTML content of the page.
+   *
+   * @return
+   *   Complete page HTML.
+   */
+  public function getPageContent() {
+    return $this->getPage()->getContent();
   }
 
   /**
@@ -147,7 +164,7 @@ class CommerceTesting
       // Profile installation.
       !$verbose || $this->installLogStep('install_profile');
       while ($this->getPage()->find('css', 'div.progress') && $this->getPage()->find('css', 'div.percentage')->getText() != '100%') {
-        $this->session->reload();
+        $this->reload();
         // Pause spares poor CPU.
         sleep(1);
         !$verbose || print(str_replace('.', '. ', $this->getPage()->find('css', 'div.message')->getText()) . "\n");
@@ -169,7 +186,7 @@ class CommerceTesting
       $button->press();
       sleep(2);
       while ($this->getPage()->find('css', 'div.progress') && $this->getPage()->find('css', 'div.percentage')->getText() != '100%') {
-        $this->session->reload();
+        $this->reload();
         sleep(1);
         !$verbose || print(str_replace('.', '. ', $this->getPage()->find('css', 'div.message')->getText()) . "\n");
       }
