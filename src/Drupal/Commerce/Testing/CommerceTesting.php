@@ -96,7 +96,7 @@ class CommerceTesting
    */
   public function login() {
     if (empty($this->username) && empty($this->password)) {
-      throw new \Drupal\Commerce\Exception\CommerceException("Username and password must be provided for login.");
+      throw new \Drupal\Commerce\Exception\CommerceException('Username and password must be provided for login.');
     }
 
     $this->visit('user');
@@ -109,7 +109,31 @@ class CommerceTesting
     $loginSubmit->press();
 
     if ($this->getPage()->find('css', 'div.error')) {
-      throw new \Drupal\Commerce\Exception\CommerceException("Unable to login, please check username and password or if the account is blocked.");
+      throw new \Drupal\Commerce\Exception\CommerceException('Unable to login, please check username and password or if the account is blocked.');
+    }
+  }
+
+  /**
+   * Adds product to the cart.
+   *
+   * @param $nid
+   *   Product display node identifier.
+   */
+  public function addToCart($nid) {
+    if (!is_numeric($nid)) {
+      throw new \Drupal\Commerce\Exception\CommerceException('Only product displays (nodes) can be added to the cart and you must provide node ID.');
+    }
+
+    $this->visit('node/' . $nid);
+    $button = $this->getPage()->find('css', 'form.commerce-add-to-cart input#edit-submit');
+    if (!$button) {
+      throw new \Drupal\Commerce\Exception\CommerceException('Could not find Add to cart button in node/' . $nid);
+    }
+
+    $button->press();
+
+    if (strpos($this->getPage()->find('css', 'div.status')->getText(), 'added to') === FALSE) {
+      throw new \Drupal\Commerce\Exception\CommerceException('Failed to add node/' . $nid . ' to the cart.');
     }
   }
 
