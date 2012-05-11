@@ -28,6 +28,11 @@ class CommerceTesting
   private $password;
 
   /**
+   * Verbosity.
+   */
+  private $verbose;
+
+  /**
    * Initializes CommerceTesting class.
    *
    * @param $baseUrl
@@ -49,6 +54,14 @@ class CommerceTesting
     $this->baseUrl = $baseUrl . '/';
     $this->username = $username;
     $this->password = $password;
+    $this->verbose = FALSE;
+  }
+
+  /**
+   * Turns on verbosity.
+   */
+  public function beVerbose() {
+    $this->verbose = TRUE;
   }
 
   /**
@@ -59,6 +72,7 @@ class CommerceTesting
    */
   public function visit($url = '') {
     $this->session->visit($this->baseUrl . $url);
+    !$this->verbose || print("Visited " . $this->baseUrl . $url . ".\n");
     // Fail on all status codes but 2XX.
     if (floor($this->session->getStatusCode() / 100) != 2) {
       $this->throwError('Unsuccessful, server returned ' . $this->session->getStatusCode() . ' code.');
@@ -70,6 +84,7 @@ class CommerceTesting
    */
   public function reload() {
     $this->session->reload();
+    !$this->verbose || print("Page reloaded.\n");
   }
 
   /**
@@ -89,6 +104,7 @@ class CommerceTesting
    *   Complete page HTML.
    */
   public function getPageContent() {
+    !$this->verbose || print("Page content retrieved.\n");
     return $this->getPage()->getContent();
   }
 
@@ -108,6 +124,7 @@ class CommerceTesting
     if ($this->assertExistance('div.error')) {
       $this->throwError('Unable to login, please check username and password or if the account is blocked.');
     }
+    !$this->verbose || print("Login performed.\n");
   }
 
   /**
@@ -127,6 +144,7 @@ class CommerceTesting
     if (!$this->assertText('div.status', 'added to')) {
       $this->throwError('Failed to add node/' . $nid . ' to the cart.');
     }
+    !$this->verbose || print('Added node/' . $nid . " to the cart.\n");
   }
 
   /**
@@ -154,6 +172,7 @@ class CommerceTesting
       case 1:
         // Start checkout from the cart.
         $this->assertExistance('input#edit-checkout')->press();
+        !$this->verbose || print("Checkout started.\n");
         break;
 
       case 2:
@@ -184,6 +203,7 @@ class CommerceTesting
         if ($this->assertText('h2.element-invisible', 'Errors on form')) {
           $this->throwError('Checkout failed with errors on the checkout form.');
         }
+        !$this->verbose || print("Checkout information submited.\n");
         break;
 
       case 3:
@@ -193,6 +213,7 @@ class CommerceTesting
         if ($this->assertText('h2.element-invisible', 'Errors on form')) {
           $this->throwError('Checkout failed with errors on the shipping form.');
         }
+        !$this->verbose || print("Shipping method submited.\n");
         break;
 
       case 4:
@@ -201,13 +222,15 @@ class CommerceTesting
 
         $this->assertExistance('input#edit-continue')->press();
 
+        !$this->verbose || print("Payment method submited.\n");
+
         if ($this->assertText('h2.element-invisible', 'Errors on form')) {
           $this->throwError('Checkout failed with errors on the review form.');
         }
 
         // Assert checkout completition.
         $checkout_link = $this->assertExistance('div.checkout-completion-message a')->getAttribute('href');
-        echo "Checkout complete. View it here: $checkout_link.\n";
+        !$this->verbose || print("Checkout complete. View it here: $checkout_link.\n");
         break;
       }
     }
@@ -226,10 +249,8 @@ class CommerceTesting
    *   Database password.
    * @param $site_mail
    *   Website mail.
-   * @param $verbose
-   *   If TRUE, echo out installation info.
    */
-  public function install($db_name, $db_user, $db_pass, $site_mail, $verbose = FALSE) {
+  public function install($db_name, $db_user, $db_pass, $site_mail) {
     $this->visit();
 
     // Get installation tasks.
@@ -240,44 +261,49 @@ class CommerceTesting
 
     case 'choose_language':
       // Language selection.
-      !$verbose || $this->installLogStep('choose_language');
+      !$this->verbose || $this->installLogStep('choose_language');
       $this->assertExistance('input#edit-submit')->press();
+      !$this->verbose || print("Language selected.\n");
 
     case 'set_up_database':
       // Database setup. We assume MySQL being used.
-      !$verbose || $this->installLogStep('set_up_database');
+      !$this->verbose || $this->installLogStep('set_up_database');
       $this->assertExistance('input#edit-mysql-database')->setValue($db_name);
       $this->assertExistance('input#edit-mysql-username')->setValue($db_user);
       $this->assertExistance('input#edit-mysql-password')->setValue($db_pass);
       $this->assertExistance('input#edit-save')->press();
+      !$this->verbose || print("Database set up.\n");
 
     case 'install_profile':
       // Profile installation.
-      !$verbose || $this->installLogStep('install_profile');
+      !$this->verbose || $this->installLogStep('install_profile');
       while ($this->assertExistance('div.progress', FALSE) && !$this->assertText('div.percentage', '100%')) {
         $this->reload();
         // Pause spares poor CPU.
         sleep(1);
-        !$verbose || print(str_replace('.', '. ', $this->assertExistance('div.message', FALSE)->getText()) . "\n");
+        !$this->verbose || print(str_replace('.', '. ', $this->assertExistance('div.message', FALSE)->getText()) . "\n");
       }
       $this->visit('install.php?locale=en');
+      !$this->verbose || print("Profile installed.\n");
 
     case 'configure_site':
       // Site configuration.
-      !$verbose || $this->installLogStep('configure_site');
+      !$this->verbose || $this->installLogStep('configure_site');
       $this->assertExistance('input#edit-site-mail')->setValue($site_mail);
       $this->assertExistance('input#edit-submit')->press();
+      !$this->verbose || print("Site configured.\n");
 
     case 'configure_store':
       // Store configuration.
-      !$verbose || $this->installLogStep('configure_store');
+      !$this->verbose || $this->installLogStep('configure_store');
       $this->assertExistance('input#edit-submit')->press();
       sleep(2);
       while ($this->assertExistance('div.progress', FALSE) && !$this->assertText('div.percentage', '100%')) {
         $this->reload();
         sleep(1);
-        !$verbose || print(str_replace('.', '. ', $this->assertExistance('div.message', FALSE)->getText()) . "\n");
+        !$this->verbose || print(str_replace('.', '. ', $this->assertExistance('div.message', FALSE)->getText()) . "\n");
       }
+      !$this->verbose || print("Store configured.\n");
 
     case 'finished':
       // Installation finished.
@@ -301,7 +327,7 @@ class CommerceTesting
       $this->throwError('Installation failed, no front page can be found.');
 
     }
-    !$verbose || print("Installation finished.\n");
+    !$this->verbose || print("Installation finished.\n");
   }
 
   /**
@@ -317,6 +343,8 @@ class CommerceTesting
     foreach ($task_list as $task_el) {
       $tasks[strtolower(str_replace(' ', '_', trim(preg_replace('/\s*\([^)]*\)/', '', $task_el->getText()))))] = $task_el->getAttribute('class') ? $task_el->getAttribute('class') : 'todo';
     }
+
+    !$this->verbose || print('Found ' . count($tasks) . " installation tasks.\n");
 
     return $tasks;
   }
@@ -334,6 +362,7 @@ class CommerceTesting
   protected function getCurrentTask($tasks) {
     foreach ($tasks as $name => $status) {
       if ($status == 'active') {
+        !$this->verbose || print('Current installation taks is ' . $name . ".\n");
         return $name;
       }
     }
@@ -354,6 +383,8 @@ class CommerceTesting
     if (!$element && $force_existance) {
       $this->throwError("Element $selector does not exist.");
     }
+
+    !$this->verbose || print(($element ? 'Found' : 'Not found') . ' element ' . $selector . ".\n");
 
     return $element;
   }
@@ -376,9 +407,11 @@ class CommerceTesting
     }
 
     if ($element && strpos($element->getText(), $text) !== FALSE) {
+      !$this->verbose || print('Found "' . $text . '" in ' . $selector . ".\n");
       return TRUE;
     }
 
+    !$this->verbose || print('Did not found "' . $text . '" in ' . $selector . ".\n");
     return FALSE;
   }
 
