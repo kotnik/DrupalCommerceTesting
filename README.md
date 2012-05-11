@@ -1,7 +1,15 @@
 Drupal Commerce Testing
 =======================
 
-This is still *work in progress*.
+Behat/Mink powered tests.
+
+Following screnarios are supported:
+
+* Installation
+* Visiting a page
+* Login
+* Adding to the cart
+* Checkout
 
 Installation
 ------------
@@ -19,7 +27,7 @@ require_once 'vendor/autoload.php';
 
 // Site link and credentials:
 $commerceUrl = 'http://commerce.example.com';
-$commerceUser = 'admin';
+$commerceUser = 'user';
 $commercePassword = 'password';
 
 try {
@@ -29,8 +37,21 @@ try {
     $commerceUser,
     $commercePassword
   );
+
+  // Install Drupal Commerce website:
+  $commerceSite->install('database', 'user', 'password', 'user@example.com');
+
   // Login to the Drupal Commerce website:
   $commerceSite->login();
+
+  // Visit the front page:
+  $commerceSite->visit();
+
+  // Add product with product display node ID 10 to the cart:
+  $comerceSite->addToCart(10);
+
+  // Checkout:
+  $commerceSite->checkout()
 } catch (Exception $e) {
   echo 'Caught exception: ', $e->getMessage(), "\n";
   exit(1);
