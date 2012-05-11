@@ -59,8 +59,9 @@ class CommerceTesting
    */
   public function visit($url = '') {
     $this->session->visit($this->baseUrl . $url);
+    // Fail on all status codes but 2XX.
     if (floor($this->session->getStatusCode() / 100) != 2) {
-      throw new \Drupal\Commerce\Exception\CommerceException('Unsuccessful, server returned ' . $this->session->getStatusCode() . ' code.');
+      $this->throwError('Unsuccessful, server returned ' . $this->session->getStatusCode() . ' code.');
     }
   }
 
@@ -96,20 +97,16 @@ class CommerceTesting
    */
   public function login() {
     if (empty($this->username) && empty($this->password)) {
-      throw new \Drupal\Commerce\Exception\CommerceException('Username and password must be provided for login.');
+      $this->throwError('Username and password must be provided for login.');
     }
 
     $this->visit('user');
-    $username = $this->getPage()->find('css', 'input#edit-name');
-    $password = $this->getPage()->find('css', 'input#edit-pass');
-    $loginSubmit = $this->getPage()->find('css', 'input#edit-submit');
+    $this->assertExistance('input#edit-name')->setValue($this->username);
+    $this->assertExistance('input#edit-pass')->setValue($this->password);
+    $this->assertExistance('input#edit-submit')->press();
 
-    $username->setValue($this->username);
-    $password->setValue($this->password);
-    $loginSubmit->press();
-
-    if ($this->getPage()->find('css', 'div.error')) {
-      throw new \Drupal\Commerce\Exception\CommerceException('Unable to login, please check username and password or if the account is blocked.');
+    if ($this->assertExistance('div.error')) {
+      $this->throwError('Unable to login, please check username and password or if the account is blocked.');
     }
   }
 
@@ -121,19 +118,98 @@ class CommerceTesting
    */
   public function addToCart($nid) {
     if (!is_numeric($nid)) {
-      throw new \Drupal\Commerce\Exception\CommerceException('Only product displays (nodes) can be added to the cart and you must provide node ID.');
+      $this->throwError('Only product displays (nodes) can be added to the cart and you must provide node ID.');
     }
 
     $this->visit('node/' . $nid);
-    $button = $this->getPage()->find('css', 'form.commerce-add-to-cart input#edit-submit');
-    if (!$button) {
-      throw new \Drupal\Commerce\Exception\CommerceException('Could not find Add to cart button in node/' . $nid);
+    $this->assertExistance('form.commerce-add-to-cart input#edit-submit')->press();
+
+    if (!$this->assertText('div.status', 'added to')) {
+      $this->throwError('Failed to add node/' . $nid . ' to the cart.');
+    }
+  }
+
+  /**
+   * Performs cart checkout.
+   *
+   * @param $level
+   *   Checkout is made of 4 levels. With this paramter you can set
+   *   which level you want to reach. Following levels are available:
+   *     1 = Start checkout.
+   *     2 = 1 and complete checkout information.
+   *     3 = 1, 2 and select shipping method.
+   *     4 = 1, 2, 3 and do the review completing the checkout.
+   */
+  public function checkout($level = 4) {
+    $this->visit('cart');
+
+    if ($this->assertText('div.cart-empty-page', 'is empty')) {
+      $this->throwError('Can not checkout with the empty cart.');
     }
 
-    $button->press();
+    $current_level = 0;
+    while ($current_level++ < $level) {
+      switch ($current_level) {
 
-    if (strpos($this->getPage()->find('css', 'div.status')->getText(), 'added to') === FALSE) {
-      throw new \Drupal\Commerce\Exception\CommerceException('Failed to add node/' . $nid . ' to the cart.');
+      case 1:
+        // Start checkout from the cart.
+        $this->assertExistance('input#edit-checkout')->press();
+        break;
+
+      case 2:
+        // Checkout form.
+        $this->assertExistance('input#edit-account-login-mail')->setValue($this->randomString(10) . '@example.com');
+        foreach (
+          array(
+            'edit-customer-profile-shipping-commerce-customer-address-und-0-name-line',
+            'edit-customer-profile-shipping-commerce-customer-address-und-0-thoroughfare',
+            'edit-customer-profile-shipping-commerce-customer-address-und-0-locality',
+            'edit-customer-profile-shipping-commerce-customer-address-und-0-postal-code',
+            'edit-customer-profile-billing-commerce-customer-address-und-0-name-line',
+            'edit-customer-profile-billing-commerce-customer-address-und-0-thoroughfare',
+            'edit-customer-profile-billing-commerce-customer-address-und-0-locality',
+            'edit-customer-profile-billing-commerce-customer-address-und-0-postal-code'
+          ) as $field) {
+          $this->assertExistance('input#' . $field)->setValue($this->randomString(5));
+        }
+        foreach (
+          array(
+            'edit-customer-profile-shipping-commerce-customer-address-und-0-administrative-area',
+            'edit-customer-profile-billing-commerce-customer-address-und-0-administrative-area'
+          ) as $field) {
+          $this->assertExistance('select#' . $field)->selectOption('MN');
+        }
+        $this->assertExistance('input#edit-continue')->press();
+
+        if ($this->assertText('h2.element-invisible', 'Errors on form')) {
+          $this->throwError('Checkout failed with errors on the checkout form.');
+        }
+        break;
+
+      case 3:
+        // Select default shipping method.
+        $this->assertExistance('input#edit-continue')->press();
+
+        if ($this->assertText('h2.element-invisible', 'Errors on form')) {
+          $this->throwError('Checkout failed with errors on the shipping form.');
+        }
+        break;
+
+      case 4:
+        // Use default (example) payment method.
+        $this->assertExistance('input#edit-commerce-payment-payment-details-name')->setValue($this->randomString(5));
+
+        $this->assertExistance('input#edit-continue')->press();
+
+        if ($this->assertText('h2.element-invisible', 'Errors on form')) {
+          $this->throwError('Checkout failed with errors on the review form.');
+        }
+
+        // Assert checkout completition.
+        $checkout_link = $this->assertExistance('div.checkout-completion-message a')->getAttribute('href');
+        echo "Checkout complete. View it here: $checkout_link.\n";
+        break;
+      }
     }
   }
 
@@ -165,54 +241,42 @@ class CommerceTesting
     case 'choose_language':
       // Language selection.
       !$verbose || $this->installLogStep('choose_language');
-      $button = $this->getPage()->find('css', 'input#edit-submit');
-      $button->press();
+      $this->assertExistance('input#edit-submit')->press();
 
     case 'set_up_database':
-      // Database setup.
+      // Database setup. We assume MySQL being used.
       !$verbose || $this->installLogStep('set_up_database');
-      $input_name = $this->getPage()->find('css', 'input#edit-mysql-database');
-      $input_user = $this->getPage()->find('css', 'input#edit-mysql-username');
-      $input_pass = $this->getPage()->find('css', 'input#edit-mysql-password');
-      // We assume MySQL being used.
-      if (!$input_name || !$input_user || !$input_pass) {
-        throw new \Drupal\Commerce\Exception\CommerceException('Could not find MySQL parameters inputs.');
-      }
-      $input_name->setValue($db_name);
-      $input_user->setValue($db_user);
-      $input_pass->setValue($db_pass);
-      $button = $this->getPage()->find('css', 'input#edit-save');
-      $button->press();
+      $this->assertExistance('input#edit-mysql-database')->setValue($db_name);
+      $this->assertExistance('input#edit-mysql-username')->setValue($db_user);
+      $this->assertExistance('input#edit-mysql-password')->setValue($db_pass);
+      $this->assertExistance('input#edit-save')->press();
 
     case 'install_profile':
       // Profile installation.
       !$verbose || $this->installLogStep('install_profile');
-      while ($this->getPage()->find('css', 'div.progress') && $this->getPage()->find('css', 'div.percentage')->getText() != '100%') {
+      while ($this->assertExistance('div.progress', FALSE) && !$this->assertText('div.percentage', '100%')) {
         $this->reload();
         // Pause spares poor CPU.
         sleep(1);
-        !$verbose || print(str_replace('.', '. ', $this->getPage()->find('css', 'div.message')->getText()) . "\n");
+        !$verbose || print(str_replace('.', '. ', $this->assertExistance('div.message', FALSE)->getText()) . "\n");
       }
       $this->visit('install.php?locale=en');
 
     case 'configure_site':
       // Site configuration.
       !$verbose || $this->installLogStep('configure_site');
-      $input_mail = $this->getPage()->find('css', 'input#edit-site-mail');
-      $input_mail->setValue($site_mail);
-      $button = $this->getPage()->find('css', 'input#edit-submit');
-      $button->press();
+      $this->assertExistance('input#edit-site-mail')->setValue($site_mail);
+      $this->assertExistance('input#edit-submit')->press();
 
     case 'configure_store':
       // Store configuration.
       !$verbose || $this->installLogStep('configure_store');
-      $button = $this->getPage()->find('css', 'input#edit-submit');
-      $button->press();
+      $this->assertExistance('input#edit-submit')->press();
       sleep(2);
-      while ($this->getPage()->find('css', 'div.progress') && $this->getPage()->find('css', 'div.percentage')->getText() != '100%') {
+      while ($this->assertExistance('div.progress', FALSE) && !$this->assertText('div.percentage', '100%')) {
         $this->reload();
         sleep(1);
-        !$verbose || print(str_replace('.', '. ', $this->getPage()->find('css', 'div.message')->getText()) . "\n");
+        !$verbose || print(str_replace('.', '. ', $this->assertExistance('div.message', FALSE)->getText()) . "\n");
       }
 
     case 'finished':
@@ -221,20 +285,20 @@ class CommerceTesting
       break;
 
     case 'choose_profile':
-      throw new \Drupal\Commerce\Exception\CommerceException('Installation profile should be already selected for us.');
+      $this->throwError('Installation profile should be already selected for us.');
       break;
 
     case 'verify_requirements':
-      throw new \Drupal\Commerce\Exception\CommerceException('Unmet requirements for Drupal installation.');
+      $this->throwError('Unmet requirements for Drupal installation.');
       break;
 
     default:
-      throw new \Drupal\Commerce\Exception\CommerceException('Uknown installation task $current_task.');
+      $this->throwError('Uknown installation task $current_task.');
     }
 
     // Assert we got to the front page.
-    if ($this->getPage()->find('css', 'h2.site-name')->getText() != 'Commerce Kickstart') {
-      throw new \Drupal\Commerce\Exception\CommerceException('Installation failed, no front page can be found.');
+    if (!$this->assertText('h2.site-name', 'Commerce Kickstart')) {
+      $this->throwError('Installation failed, no front page can be found.');
 
     }
     !$verbose || print("Installation finished.\n");
@@ -276,6 +340,59 @@ class CommerceTesting
   }
 
   /**
+   * Asserts element exsistance.
+   *
+   * @param $selector
+   *   CSS selector for the element.
+   * @param $force_existance
+   *   Throw exception if element is not found.
+   * @return
+   *   Instance of DocumentElement class.
+   */
+  protected function assertExistance($selector, $force_existance = TRUE) {
+    $element = $this->getPage()->find('css', $selector);
+    if (!$element && $force_existance) {
+      $this->throwError("Element $selector does not exist.");
+    }
+
+    return $element;
+  }
+
+  /**
+   * Asserts element text.
+   *
+   * @param $selector
+   *   CSS selector for the element, or DocumentElement object.
+   * @param $text
+   *   Text to assert in the element.
+   * @return
+   *   Instance of DocumentElement class or empty variable if not found.
+   *
+   * In case the text is not found, and exception will be thrown.
+   */
+  protected function assertText($selector, $text) {
+    if (!is_object($selector) || !$selector instanceof Behat\Mink\Element\DocumentElement) {
+      $element = $this->assertExistance($selector, FALSE);
+    }
+
+    if ($element && strpos($element->getText(), $text) !== FALSE) {
+      return TRUE;
+    }
+
+    return FALSE;
+  }
+
+  /**
+   * Throws CommerceTesting exception.
+   *
+   * @param $message
+   *   Message for the exception.
+   */
+  protected function throwError($message) {
+    throw new \Drupal\Commerce\Exception\CommerceException($message);
+  }
+
+  /**
    * Logs (outputs) current installation step.
    *
    * @param $step
@@ -285,5 +402,26 @@ class CommerceTesting
     echo "Step: ";
     echo ucfirst(str_replace('_', ' ', $step));
     echo "\n";
+  }
+
+  /**
+   * Makes a random string.
+   *
+   * @param $length
+   *   The length of the random string.
+   * @param $numeralOnly
+   *   If TRUE, return only random numbers.
+   * @return
+   *   Random string.
+   */
+  private function randomString($length = 10, $numeralOnly = FALSE) {
+    $base = $numeralOnly ? '123456789' : 'abcdefghjkmnpqrstwxyz';
+    $max = strlen($base) - 1;
+    $string = '';
+    mt_srand(microtime(TRUE) * 1000000);
+    while (strlen($string) < $length) {
+      $string .= $base{mt_rand(0, $max)};
+    }
+    return $string;
   }
 }
